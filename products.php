@@ -85,6 +85,69 @@ if (isset($_GET['delete'])) {
 }
 
 
+// EDIT / UPDATE PRODUCT
+if (isset($_POST['update_product'])) {
+
+    $product_id = (int) $_POST['product_id'];
+    $category_id = (int) $_POST['category_id'];
+    $supplier_id = (int) $_POST['supplier_id'];
+    $product_name = trim($_POST['product_name']);
+    $buying_price = (float) $_POST['buying_price'];
+    $selling_price = (float) $_POST['selling_price'];
+    $quantity = (int) $_POST['quantity'];
+    $minimum_stock = (int) $_POST['minimum_stock'];
+
+    if (
+        $product_name === "" ||
+        $buying_price < 0 ||
+        $selling_price < 0 ||
+        $quantity < 0 ||
+        $minimum_stock < 0
+    ) {
+        $message = "Please enter valid product details.";
+    } else {
+
+        $stmt = $conn->prepare(
+            "UPDATE products SET
+                category_id = ?,
+                supplier_id = ?,
+                product_name = ?,
+                buying_price = ?,
+                selling_price = ?,
+                quantity = ?,
+                minimum_stock = ?
+            WHERE product_id = ?"
+        );
+
+        if (!$stmt) {
+            die("Update preparation failed: " . $conn->error);
+        }
+
+        $stmt->bind_param(
+            "iisddiii",
+            $category_id,
+            $supplier_id,
+            $product_name,
+            $buying_price,
+            $selling_price,
+            $quantity,
+            $minimum_stock,
+            $product_id
+        );
+
+        if ($stmt->execute()) {
+            header("Location: products.php?success=updated");
+            exit;
+        } else {
+            $message = "Error updating product: " . $stmt->error;
+        }
+
+        $stmt->close();
+    }
+}
+
+
+
 // SUCCESS MESSAGES
 if (isset($_GET['success'])) {
 
@@ -95,6 +158,10 @@ if (isset($_GET['success'])) {
     if ($_GET['success'] == "deleted") {
         $message = "Product deleted successfully!";
     }
+
+    if ($_GET['success'] == "updated") {
+    $message = "Product updated successfully!";
+}
 }
 
 
@@ -120,6 +187,30 @@ if (!$stmt->execute()) {
 }
 
 $products = $stmt->get_result();
+
+
+// GET PRODUCT FOR EDITING
+$editProduct = null;
+
+if (isset($_GET['edit'])) {
+
+    $edit_id = (int) $_GET['edit'];
+
+    $stmt = $conn->prepare(
+        "SELECT * FROM products WHERE product_id = ?"
+    );
+
+    $stmt->bind_param("i", $edit_id);
+    $stmt->execute();
+
+    $result = $stmt->get_result();
+
+    if ($result->num_rows > 0) {
+        $editProduct = $result->fetch_assoc();
+    }
+
+    $stmt->close();
+}
 
 
 // STOCK STATISTICS
@@ -148,6 +239,7 @@ if ($stats) {
 
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="style.css">
 
 <title>Product Management | SpazaSmart</title>
 
@@ -370,124 +462,130 @@ th {
 
     <!-- ADD PRODUCT FORM -->
 
-    <div class="form-box">
+    
+<div class="form-box">
 
-        <h2>Add New Product</h2>
+    <h2>
+        <?= $editProduct ? "Edit Product" : "Add New Product" ?>
+    </h2>
 
-        <form method="POST">
+    <form method="POST">
 
-            <div class="form-grid">
+        <?php if ($editProduct): ?>
 
-                <div>
+            <input
+                type="hidden"
+                name="product_id"
+                value="<?= $editProduct['product_id'] ?>"
+            >
 
-                    <label>Product Name</label>
+        <?php endif; ?>
 
-                    <input
-                        type="text"
-                        name="product_name"
-                        placeholder="Enter product name"
-                        required
-                    >
+        <div class="form-grid">
 
-                </div>
-
-
-                <div>
-
-                    <label>Category ID</label>
-
-                    <input
-                        type="number"
-                        name="category_id"
-                        min="1"
-                        required
-                    >
-
-                </div>
-
-
-                <div>
-
-                    <label>Supplier ID</label>
-
-                    <input
-                        type="number"
-                        name="supplier_id"
-                        min="1"
-                        required
-                    >
-
-                </div>
-
-
-                <div>
-
-                    <label>Buying Price (R)</label>
-
-                    <input
-                        type="number"
-                        name="buying_price"
-                        min="0"
-                        step="0.01"
-                        required
-                    >
-
-                </div>
-
-
-                <div>
-
-                    <label>Selling Price (R)</label>
-
-                    <input
-                        type="number"
-                        name="selling_price"
-                        min="0"
-                        step="0.01"
-                        required
-                    >
-
-                </div>
-
-
-                <div>
-
-                    <label>Quantity</label>
-
-                    <input
-                        type="number"
-                        name="quantity"
-                        min="0"
-                        required
-                    >
-
-                </div>
-
-
-                <div>
-
-                    <label>Minimum Stock</label>
-
-                    <input
-                        type="number"
-                        name="minimum_stock"
-                        min="0"
-                        required
-                    >
-
-                </div>
-
+            <div>
+                <label>Product Name</label>
+                <input
+                    type="text"
+                    name="product_name"
+                    value="<?= htmlspecialchars($editProduct['product_name'] ?? '') ?>"
+                    placeholder="Enter product name"
+                    required
+                >
             </div>
 
+            <div>
+                <label>Category ID</label>
+                <input
+                    type="number"
+                    name="category_id"
+                    min="1"
+                    value="<?= htmlspecialchars($editProduct['category_id'] ?? '') ?>"
+                    required
+                >
+            </div>
+
+            <div>
+                <label>Supplier ID</label>
+                <input
+                    type="number"
+                    name="supplier_id"
+                    min="1"
+                    value="<?= htmlspecialchars($editProduct['supplier_id'] ?? '') ?>"
+                    required
+                >
+            </div>
+
+            <div>
+                <label>Buying Price (R)</label>
+                <input
+                    type="number"
+                    name="buying_price"
+                    min="0"
+                    step="0.01"
+                    value="<?= htmlspecialchars($editProduct['buying_price'] ?? '') ?>"
+                    required
+                >
+            </div>
+
+            <div>
+                <label>Selling Price (R)</label>
+                <input
+                    type="number"
+                    name="selling_price"
+                    min="0"
+                    step="0.01"
+                    value="<?= htmlspecialchars($editProduct['selling_price'] ?? '') ?>"
+                    required
+                >
+            </div>
+
+            <div>
+                <label>Quantity</label>
+                <input
+                    type="number"
+                    name="quantity"
+                    min="0"
+                    value="<?= htmlspecialchars($editProduct['quantity'] ?? '') ?>"
+                    required
+                >
+            </div>
+
+            <div>
+                <label>Minimum Stock</label>
+                <input
+                    type="number"
+                    name="minimum_stock"
+                    min="0"
+                    value="<?= htmlspecialchars($editProduct['minimum_stock'] ?? '') ?>"
+                    required
+                >
+            </div>
+
+        </div>
+
+        <?php if ($editProduct): ?>
+
+            <button type="submit" name="update_product">
+                Update Product
+            </button>
+
+            <a href="products.php"
+               style="margin-left:15px; color:#dc2626;">
+                Cancel
+            </a>
+
+        <?php else: ?>
 
             <button type="submit" name="add_product">
                 Add Product
             </button>
 
-        </form>
+        <?php endif; ?>
 
-    </div>
+    </form>
 
+</div>
 
     <!-- PRODUCT TABLE -->
 
@@ -571,19 +669,27 @@ th {
 
                                 <?php endif; ?>
 
-                            </td>
+                            
+<td>
 
-                            <td>
+    <a
+        href="products.php?edit=<?= $row['product_id'] ?>"
+        style="color:#176b45; text-decoration:none; font-weight:bold;"
+    >
+        Edit
+    </a>
 
-                                <a
-                                    class="delete"
-                                    href="products.php?delete=<?= $row['product_id'] ?>"
-                                    onclick="return confirm('Are you sure you want to delete this product?')"
-                                >
-                                    Delete
-                                </a>
+    |
 
-                            </td>
+    <a
+        class="delete"
+        href="products.php?delete=<?= $row['product_id'] ?>"
+        onclick="return confirm('Are you sure you want to delete this product?')"
+    >
+        Delete
+    </a>
+
+</td>
 
                         </tr>
 
