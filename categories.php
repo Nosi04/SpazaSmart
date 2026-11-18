@@ -10,101 +10,325 @@ if (!isset($_SESSION['user_id'])) {
 
 $message = "";
 
-// Add category
+// ADD CATEGORY
 if (isset($_POST['add'])) {
-    $name = trim($_POST['category_name']);
-    $description = trim($_POST['description']);
 
-    if ($name && $description) {
-        $stmt = $conn->prepare("INSERT INTO categories (category_name, description) VALUES (?, ?)");
+    $name = trim($_POST['category_name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+
+    if ($name === "" || $description === "") {
+        $message = "Please complete all fields.";
+    } else {
+
+        $stmt = $conn->prepare("
+            INSERT INTO categories (category_name, description)
+            VALUES (?, ?)
+        ");
+
         $stmt->bind_param("ss", $name, $description);
 
-        $message = $stmt->execute()
-            ? "Category added successfully!"
-            : "Unable to add category. It may already exist.";
-    } else {
-        $message = "Please complete all fields.";
+        if ($stmt->execute()) {
+            header("Location: categories.php?success=added");
+            exit();
+        } else {
+            $message = "Unable to add category. Check whether the category already exists.";
+        }
+
+        $stmt->close();
     }
 }
 
-// Delete category
-if (isset($_GET['delete'])) {
-    $id = (int)$_GET['delete'];
+// UPDATE CATEGORY
+if (isset($_POST['update'])) {
 
-    $stmt = $conn->prepare("DELETE FROM categories WHERE category_id=?");
-    $stmt->bind_param("i", $id);
+    $id = (int)($_POST['category_id'] ?? 0);
+    $name = trim($_POST['category_name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
 
-    $message = $stmt->execute()
-        ? "Category deleted successfully!"
-        : "Unable to delete category. It may be linked to products.";
+    if ($id <= 0 || $name === "" || $description === "") {
+        $message = "Please enter valid category details.";
+    } else {
+
+        $stmt = $conn->prepare("
+            UPDATE categories
+            SET category_name = ?, description = ?
+            WHERE category_id = ?
+        ");
+
+        $stmt->bind_param("ssi", $name, $description, $id);
+
+        if ($stmt->execute()) {
+            header("Location: categories.php?success=updated");
+            exit();
+        } else {
+            $message = "Unable to update category.";
+        }
+
+        $stmt->close();
+    }
 }
 
-// Search categories
-$search = $_GET['search'] ?? '';
-$stmt = $conn->prepare("SELECT * FROM categories WHERE category_name LIKE ? ORDER BY category_id DESC");
-$term = "%$search%";
+// DELETE CATEGORY
+if (isset($_POST['delete'])) {
+
+    $id = (int)($_POST['category_id'] ?? 0);
+
+    $check = $conn->prepare("
+        SELECT COUNT(*) AS total
+        FROM products
+        WHERE category_id = ?
+    ");
+
+    $check->bind_param("i", $id);
+    $check->execute();
+
+    $linked = $check->get_result()->fetch_assoc()['total'];
+    $check->close();
+
+    if ($linked > 0) {
+        $message = "This category cannot be deleted because it is linked to existing products.";
+    } else {
+
+        $stmt = $conn->prepare("
+            DELETE FROM categories
+            WHERE category_id = ?
+        ");
+
+        $stmt->bind_param("i", $id);
+
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            header("Location: categories.php?success=deleted");
+            exit();
+        } else {
+            $message = "Category could not be deleted.";
+        }
+
+        $stmt->close();
+    }
+}
+
+// SUCCESS MESSAGES
+if (isset($_GET['success'])) {
+
+    $messages = [
+        'added' => 'Category added successfully!',
+        'updated' => 'Category updated successfully!',
+        'deleted' => 'Category deleted successfully!'
+    ];
+
+    $message = $messages[$_GET['success']] ?? '';
+}
+
+// GET CATEGORY FOR EDITING
+$editCategory = null;
+
+if (isset($_GET['edit'])) {
+
+    $id = (int)$_GET['edit'];
+
+    $stmt = $conn->prepare("
+        SELECT * FROM categories
+        WHERE category_id = ?
+    ");
+
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+
+    $editCategory = $stmt->get_result()->fetch_assoc();
+
+    $stmt->close();
+}
+
+// SEARCH CATEGORIES
+$search = trim($_GET['search'] ?? '');
+$term = "%" . $search . "%";
+
+$stmt = $conn->prepare("
+    SELECT *
+    FROM categories
+    WHERE category_name LIKE ?
+    ORDER BY category_id DESC
+");
+
 $stmt->bind_param("s", $term);
 $stmt->execute();
+
 $categories = $stmt->get_result();
+
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-    <link rel="stylesheet" href="style.css">
-<title>Category Management</title>
-<style>
-body{font-family:Arial;background:#f4f6f9;padding:25px}
-.card{background:white;padding:20px;margin-bottom:20px;border-radius:8px}
-input,textarea,button{padding:10px;margin:7px 0;width:100%;box-sizing:border-box}
-button{background:#198754;color:white;border:0;cursor:pointer}
-table{width:100%;border-collapse:collapse}
-th,td{padding:12px;border-bottom:1px solid #ddd;text-align:left}
-th{background:#173b32;color:white}
-a{color:red}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Category Management | SpazaSmart</title>
+
+    <link rel="stylesheet" href="/SpazaSmart/style.css?v=5">
 </head>
-<body>
 
-<h1>Category Management</h1>
-<p><?= htmlspecialchars($message) ?></p>
+<body class="categories-page">
 
-<div class="card">
-<h2>Add Category</h2>
+<div class="category-page">
 
-<form method="POST">
-<input type="text" name="category_name" placeholder="Category Name" required>
-<textarea name="description" placeholder="Category Description" required></textarea>
-<button type="submit" name="add">Add Category</button>
-</form>
-</div>
+    <div class="page-header">
+        <div>
+            <span class="category-tag">SPAZASMART MANAGEMENT</span>
+        <h1>Category Management</h1>
+        <p>Organise your shop products into categories.</p>
+    </div>
 
-<div class="card">
-<h2>Category List</h2>
+    <a href="dashboard.php" class="back-button">
+        ← Back to Dashboard
+    </a>
+        </div>
 
-<form method="GET">
-<input type="text" name="search" placeholder="Search category..." value="<?= htmlspecialchars($search) ?>">
-<button type="submit">Search</button>
-</form>
+        <a href="dashboard.php">Back to Dashboard</a>
+    </div>
 
-<table>
-<tr>
-<th>ID</th><th>Category</th><th>Description</th><th>Action</th>
-</tr>
+    <?php if ($message !== ""): ?>
+        <p class="message">
+            <?= htmlspecialchars($message) ?>
+        </p>
+    <?php endif; ?>
 
-<?php while($row = $categories->fetch_assoc()): ?>
-<tr>
-<td><?= $row['category_id'] ?></td>
-<td><?= htmlspecialchars($row['category_name']) ?></td>
-<td><?= htmlspecialchars($row['description']) ?></td>
-<td>
-<a href="categories.php?delete=<?= $row['category_id'] ?>"
-onclick="return confirm('Delete this category?')">Delete</a>
-</td>
-</tr>
-<?php endwhile; ?>
+    <!-- ADD / EDIT CATEGORY -->
+    <div class="form-box">
 
-</table>
+        <h2>
+            <?= $editCategory ? "Edit Category" : "Add New Category" ?>
+        </h2>
+
+        <form method="POST" action="categories.php">
+
+            <?php if ($editCategory): ?>
+                <input
+                    type="hidden"
+                    name="category_id"
+                    value="<?= (int)$editCategory['category_id'] ?>"
+                >
+            <?php endif; ?>
+
+            <div class="form-group">
+                <label>Category Name</label>
+
+                <input
+                    type="text"
+                    name="category_name"
+                    placeholder="Enter category name"
+                    value="<?= htmlspecialchars($editCategory['category_name'] ?? '') ?>"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Description</label>
+
+                <textarea
+                    name="description"
+                    placeholder="Enter category description"
+                    required
+                ><?= htmlspecialchars($editCategory['description'] ?? '') ?></textarea>
+            </div>
+
+            <button
+                type="submit"
+                name="<?= $editCategory ? 'update' : 'add' ?>"
+            >
+                <?= $editCategory ? 'Update Category' : 'Add Category' ?>
+            </button>
+
+            <?php if ($editCategory): ?>
+                <a href="categories.php">Cancel Editing</a>
+            <?php endif; ?>
+
+        </form>
+
+    </div>
+
+    <!-- CATEGORY LIST -->
+    <div class="table-box">
+
+        <h2>Category List</h2>
+
+        <form method="GET" action="categories.php" class="search">
+
+            <input
+                type="text"
+                name="search"
+                placeholder="Search category..."
+                value="<?= htmlspecialchars($search) ?>"
+            >
+
+            <button type="submit">Search</button>
+
+            <a href="categories.php">Clear Search</a>
+
+        </form>
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Category ID</th>
+                    <th>Category Name</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <?php if ($categories->num_rows > 0): ?>
+
+                    <?php while ($row = $categories->fetch_assoc()): ?>
+
+                        <tr>
+
+                            <td><?= (int)$row['category_id'] ?></td>
+
+                            <td><?= htmlspecialchars($row['category_name']) ?></td>
+
+                            <td><?= htmlspecialchars($row['description']) ?></td>
+
+                            <td>
+                                <a href="categories.php?edit=<?= (int)$row['category_id'] ?>">
+                                    Edit
+                                </a>
+
+                                <form method="POST" action="categories.php">
+                                    <input
+                                        type="hidden"
+                                        name="category_id"
+                                        value="<?= (int)$row['category_id'] ?>"
+                                    >
+
+                                    <button type="submit" name="delete">
+                                        Delete
+                                    </button>
+                                </form>
+                            </td>
+
+                        </tr>
+
+                    <?php endwhile; ?>
+
+                <?php else: ?>
+
+                    <tr>
+                        <td colspan="4">No categories found.</td>
+                    </tr>
+
+                <?php endif; ?>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
 </div>
 
 </body>

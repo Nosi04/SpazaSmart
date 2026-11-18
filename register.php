@@ -1,95 +1,248 @@
 
 <?php
-include 'connection.php';
+session_start();
+require_once 'connection.php';
+
+// Redirect users who are already logged in
+if (isset($_SESSION['user_id'])) {
+    header("Location: dashboard.php");
+    exit();
+}
 
 $message = "";
+$message_type = "";
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+$full_name = "";
+$email = "";
 
-    $full_name = trim($_POST['full_name']);
-    $email = trim($_POST['email']);
-    $password = $_POST['password'];
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
-    // Check if email already exists
-    $check = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
-    $check->bind_param("s", $email);
-    $check->execute();
-    $result = $check->get_result();
+    $full_name = trim($_POST['full_name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $confirm_password = $_POST['confirm_password'] ?? '';
 
-    if ($result->num_rows > 0) {
+    // Validate full name
+    if ($full_name === '') {
+        $message = "Please enter your full name.";
+        $message_type = "error";
 
-        $message = "Email already registered.";
+    } elseif (strlen($full_name) > 255) {
+        $message = "Full name is too long.";
+        $message_type = "error";
+
+    // Validate email
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $message = "Please enter a valid email address.";
+        $message_type = "error";
+
+    // Validate password
+    } elseif (strlen($password) < 8) {
+        $message = "Password must contain at least 8 characters.";
+        $message_type = "error";
+
+    } elseif ($password !== $confirm_password) {
+        $message = "Passwords do not match.";
+        $message_type = "error";
 
     } else {
 
-        // Hash password
-        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+        // Check whether email already exists
+        $check = $conn->prepare("
+            SELECT user_id
+            FROM users
+            WHERE email = ?
+        ");
 
-        // Assign default role
-        $role = "staff";
+        if (!$check) {
+            $message = "Something went wrong. Please try again.";
+            $message_type = "error";
 
-        // Insert user
-        $stmt = $conn->prepare(
-            "INSERT INTO users (full_name, email, password, role)
-            VALUES (?, ?, ?, ?)"
-        );
-
-        $stmt->bind_param(
-            "ssss",
-            $full_name,
-            $email,
-            $hashed_password,
-            $role
-        );
-
-        if ($stmt->execute()) {
-            $message = "Registration successful! You can now log in.";
         } else {
-            $message = "Registration failed. Please try again.";
+
+            $check->bind_param("s", $email);
+            $check->execute();
+
+            $result = $check->get_result();
+
+            if ($result->num_rows > 0) {
+
+                $message = "Email already registered.";
+                $message_type = "error";
+
+            } else {
+
+                // Securely hash password
+                $hashed_password = password_hash(
+                    $password,
+                    PASSWORD_DEFAULT
+                );
+
+                // New accounts receive the staff role
+                $role = "staff";
+
+                // Insert new user
+                $stmt = $conn->prepare("
+                    INSERT INTO users
+                    (full_name, email, password, role)
+                    VALUES (?, ?, ?, ?)
+                ");
+
+                if (!$stmt) {
+                    $message = "Registration failed. Please try again.";
+                    $message_type = "error";
+
+                } else {
+
+                    $stmt->bind_param(
+                        "ssss",
+                        $full_name,
+                        $email,
+                        $hashed_password,
+                        $role
+                    );
+
+                    if ($stmt->execute()) {
+
+                        $message = "Registration successful! You can now log in.";
+                        $message_type = "success";
+
+                        $full_name = "";
+                        $email = "";
+
+                    } else {
+
+                        $message = "Registration failed. Please try again.";
+                        $message_type = "error";
+                    }
+
+                    $stmt->close();
+                }
+            }
+
+            $check->close();
         }
-
-        $stmt->close();
     }
-
-    $check->close();
 }
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SpazaSmart - Register</title>
+
+    <title>Create Account | SpazaSmart</title>
+    <link rel="stylesheet" href="/SpazaSmart/style.css?v=13">
+
+
 </head>
-<body>
 
-    <h2>Create Your SpazaSmart Account</h2>
+<body class="register-page">
 
-    <p><?php echo htmlspecialchars($message); ?></p>
+    <div class="register-container">
 
-    <form method="POST" action="">
+        <div class="register-brand">
+            <div class="register-logo">S</div>
+            <span>SPAZASMART</span>
+        </div>
 
-        <label>Full Name:</label><br>
-        <input type="text" name="full_name" required>
-        <br><br>
+        <div class="register-heading">
+            <span class="register-tag">GET STARTED</span>
 
-        <label>Email:</label><br>
-        <input type="email" name="email" required>
-        <br><br>
+            <h1>Create Your Account</h1>
 
-        <label>Password:</label><br>
-        <input type="password" name="password"
-               minlength="8" required>
-        <br><br>
+            <p>
+                Register to manage your shop's products, sales and stock.
+            </p>
+        </div>
 
-        <button type="submit">Register</button>
+        <?php if (!empty($message)): ?>
 
-    </form>
+            <div class="message <?= htmlspecialchars($message_type) ?>">
+                <?= htmlspecialchars($message) ?>
+            </div>
 
-    <p>Already have an account?
-        <a href="login.php">Login here</a>
-    </p>
+        <?php endif; ?>
+
+        <form method="POST" action="register.php" class="register-form">
+
+            <div class="register-field">
+                <label for="full_name">Full Name</label>
+
+                <input
+                    type="text"
+                    id="full_name"
+                    name="full_name"
+                    placeholder="Enter your full name"
+                    value="<?= htmlspecialchars($full_name) ?>"
+                    maxlength="255"
+                    autocomplete="name"
+                    required
+                >
+            </div>
+
+            <div class="register-field">
+                <label for="email">Email Address</label>
+
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    placeholder="Enter your email address"
+                    value="<?= htmlspecialchars($email) ?>"
+                    autocomplete="email"
+                    required
+                >
+            </div>
+
+            <div class="register-field">
+                <label for="password">Password</label>
+
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    placeholder="Create a password"
+                    minlength="8"
+                    autocomplete="new-password"
+                    required
+                >
+
+                <small>Password must contain at least 8 characters.</small>
+            </div>
+
+            <div class="register-field">
+                <label for="confirm_password">Confirm Password</label>
+
+                <input
+                    type="password"
+                    id="confirm_password"
+                    name="confirm_password"
+                    placeholder="Enter your password again"
+                    minlength="8"
+                    autocomplete="new-password"
+                    required
+                >
+            </div>
+
+            <button type="submit" class="register-button">
+                Create Account
+            </button>
+
+        </form>
+
+        <div class="register-login">
+            Already have an account?
+            <a href="login.php">Sign in here</a>
+        </div>
+
+        <div class="register-footer">
+            SpazaSmart &copy; <?= date('Y') ?>. All rights reserved.
+        </div>
+
+    </div>
 
 </body>
 </html>
