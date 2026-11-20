@@ -3,8 +3,17 @@
 session_start();
 require_once 'connection.php';
 
-// Check if user is logged in
+// =====================================
+// LOGIN AND ROLE PROTECTION
+// =====================================
+
 if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+// Only owners and staff can access sales
+if (!in_array($_SESSION['role'] ?? '', ['owner', 'staff'], true)) {
     header("Location: login.php");
     exit();
 }
@@ -12,7 +21,10 @@ if (!isset($_SESSION['user_id'])) {
 $message = "";
 $message_type = "";
 
-// Display success message after redirect
+// =====================================
+// DISPLAY SUCCESS MESSAGE
+// =====================================
+
 if (isset($_SESSION['sales_message'])) {
     $message = $_SESSION['sales_message'];
     $message_type = "success";
@@ -20,7 +32,10 @@ if (isset($_SESSION['sales_message'])) {
     unset($_SESSION['sales_message']);
 }
 
-// Record a new sale
+// =====================================
+// RECORD A NEW SALE
+// =====================================
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     $user_id = (int)$_SESSION['user_id'];
@@ -53,6 +68,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         foreach ($products as $i => $id) {
 
             $id = filter_var($id, FILTER_VALIDATE_INT);
+
             $qty = filter_var(
                 $quantities[$i] ?? null,
                 FILTER_VALIDATE_INT
@@ -139,7 +155,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $total += $subtotal;
         }
 
-        // Insert sale record
+        // =====================================
+        // INSERT SALE RECORD
+        // =====================================
+
         $stmt = $conn->prepare(
             "INSERT INTO sales
             (user_id, total_amount, payment_method, sale_date)
@@ -152,7 +171,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $sale_id = $conn->insert_id;
         $stmt->close();
 
-        // Insert individual sale items
+        // =====================================
+        // INSERT INDIVIDUAL SALE ITEMS
+        // =====================================
+
         $stmt = $conn->prepare(
             "INSERT INTO sale_items
             (sale_id, product_id, quantity, unit_price, subtotal)
@@ -175,7 +197,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         $stmt->close();
 
-        // Update product quantities and record stock movements
+        // =====================================
+        // UPDATE PRODUCT STOCK
+        // AND RECORD STOCK MOVEMENTS
+        // =====================================
+
         foreach ($required_stock as $id => $qty) {
 
             // Reduce product stock
@@ -210,7 +236,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $stmt->close();
         }
 
-        // Save all changes
+        // =====================================
+        // SAVE ALL CHANGES
+        // =====================================
+
         $conn->commit();
 
         // Redirect to prevent duplicate sales
@@ -231,7 +260,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 }
 
-// Get available products
+// =====================================
+// GET AVAILABLE PRODUCTS
+// =====================================
+
 $productList = $conn->query(
     "SELECT product_id, product_name, selling_price, quantity
      FROM products
@@ -239,10 +271,13 @@ $productList = $conn->query(
      ORDER BY product_name"
 );
 
-// Store products for the dropdown
+// Store products for dropdown
 $availableProducts = $productList->fetch_all(MYSQLI_ASSOC);
 
-// Get sales history
+// =====================================
+// GET SALES HISTORY
+// =====================================
+
 $sales = $conn->query(
     "SELECT *
      FROM sales
@@ -271,18 +306,33 @@ $sales = $conn->query(
 
 <div class="sales-container">
 
-     <a href="dashboard.php" class="sales-back-button">
+    <!-- BACK TO CORRECT DASHBOARD -->
+
+    <a href="<?= ($_SESSION['role'] ?? '') === 'owner'
+        ? 'dashboard.php'
+        : 'staff_dashboard.php' ?>"
+       class="sales-back-button">
+
         &larr; Back to Dashboard
+
     </a>
 
     <h1>Sales Management</h1>
 
-    <p class="message <?= htmlspecialchars($message_type) ?>">
-        <?= htmlspecialchars($message) ?>
-    </p>
+    <!-- SUCCESS OR ERROR MESSAGE -->
+
+    <?php if ($message !== ""): ?>
+
+        <p class="message <?= htmlspecialchars($message_type) ?>">
+            <?= htmlspecialchars($message) ?>
+        </p>
+
+    <?php endif; ?>
 
 
-    <!-- RECORD NEW SALE -->
+    <!-- =====================================
+         RECORD NEW SALE
+    ====================================== -->
 
     <h2>Record New Sale</h2>
 
@@ -387,7 +437,9 @@ $sales = $conn->query(
     <hr>
 
 
-    <!-- SALES HISTORY -->
+    <!-- =====================================
+         SALES HISTORY
+    ====================================== -->
 
     <h2>Sales History</h2>
 
@@ -400,6 +452,7 @@ $sales = $conn->query(
                 <th>Total Amount</th>
                 <th>Payment Method</th>
                 <th>Date</th>
+                <th>Receipt</th>
             </tr>
 
         </thead>
@@ -428,6 +481,19 @@ $sales = $conn->query(
                             <?= htmlspecialchars($sale['sale_date']) ?>
                         </td>
 
+                        <!-- VIEW AND PRINT RECEIPT -->
+
+                        <td>
+
+                            <a
+                                href="receipt.php?sale_id=<?= (int)$sale['sale_id'] ?>"
+                                class="receipt-link"
+                            >
+                                View Receipt
+                            </a>
+
+                        </td>
+
                     </tr>
 
                 <?php endwhile; ?>
@@ -435,7 +501,7 @@ $sales = $conn->query(
             <?php else: ?>
 
                 <tr>
-                    <td colspan="4">No sales recorded yet.</td>
+                    <td colspan="5">No sales recorded yet.</td>
                 </tr>
 
             <?php endif; ?>
@@ -447,7 +513,9 @@ $sales = $conn->query(
 </div>
 
 
-<!-- SALES CALCULATION JAVASCRIPT -->
+<!-- =====================================
+     SALES CALCULATION JAVASCRIPT
+====================================== -->
 
 <script>
 
@@ -458,7 +526,10 @@ function calculate() {
     document.querySelectorAll('.item').forEach(item => {
 
         let select = item.querySelector('.product');
-        let qty = parseInt(item.querySelector('.qty').value) || 0;
+
+        let qty = parseInt(
+            item.querySelector('.qty').value
+        ) || 0;
 
         let price = parseFloat(
             select.selectedOptions[0]?.dataset.price || 0

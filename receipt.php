@@ -3,20 +3,39 @@
 session_start();
 require_once 'connection.php';
 
-// Check if user is logged in
+// =====================================
+// LOGIN AND ROLE PROTECTION
+// =====================================
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
 }
 
-// Check whether a sale ID was provided
-if (!isset($_GET['sale_id']) || !filter_var($_GET['sale_id'], FILTER_VALIDATE_INT)) {
+// Only owners and staff can access receipts
+if (!in_array($_SESSION['role'] ?? '', ['owner', 'staff'], true)) {
+    header("Location: login.php");
+    exit();
+}
+
+// =====================================
+// VALIDATE SALE ID
+// =====================================
+
+if (
+    !isset($_GET['sale_id']) ||
+    !filter_var($_GET['sale_id'], FILTER_VALIDATE_INT) ||
+    (int)$_GET['sale_id'] <= 0
+) {
     die("Invalid receipt number.");
 }
 
 $sale_id = (int)$_GET['sale_id'];
 
-// Get sale details
+// =====================================
+// GET SALE DETAILS
+// =====================================
+
 $stmt = $conn->prepare("
     SELECT s.sale_id, s.total_amount, s.payment_method,
            s.sale_date, u.full_name
@@ -31,12 +50,15 @@ $stmt->execute();
 $sale = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
-// Check if sale exists
+// Check whether sale exists
 if (!$sale) {
     die("Receipt not found.");
 }
 
-// Get purchased products
+// =====================================
+// GET PURCHASED PRODUCTS
+// =====================================
+
 $stmt = $conn->prepare("
     SELECT p.product_name, si.quantity,
            si.unit_price, si.subtotal
@@ -51,7 +73,10 @@ $stmt->execute();
 $items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-// Format money
+// =====================================
+// FORMAT MONEY
+// =====================================
+
 function money($amount) {
     return 'R' . number_format((float)$amount, 2);
 }
@@ -61,12 +86,16 @@ function money($amount) {
 <html lang="en">
 
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
 
     <title>SpazaSmart - Receipt</title>
 
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/SpazaSmart/style.css">
+
 </head>
 
 <body>
@@ -74,6 +103,7 @@ function money($amount) {
 <div class="container">
 
     <h1>Spaza Smart</h1>
+
     <h2>Sales Receipt</h2>
 
     <hr>
@@ -104,44 +134,54 @@ function money($amount) {
 
     <table>
 
-        <tr>
-            <th>Product</th>
-            <th>Quantity</th>
-            <th>Unit Price</th>
-            <th>Subtotal</th>
-        </tr>
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Unit Price</th>
+                <th>Subtotal</th>
+            </tr>
+        </thead>
 
-        <?php if ($items): ?>
+        <tbody>
 
-            <?php foreach ($items as $item): ?>
+            <?php if ($items): ?>
+
+                <?php foreach ($items as $item): ?>
+
+                    <tr>
+
+                        <td>
+                            <?= htmlspecialchars($item['product_name']) ?>
+                        </td>
+
+                        <td>
+                            <?= (int)$item['quantity'] ?>
+                        </td>
+
+                        <td>
+                            <?= money($item['unit_price']) ?>
+                        </td>
+
+                        <td>
+                            <?= money($item['subtotal']) ?>
+                        </td>
+
+                    </tr>
+
+                <?php endforeach; ?>
+
+            <?php else: ?>
 
                 <tr>
-                    <td>
-                        <?= htmlspecialchars($item['product_name']) ?>
-                    </td>
-
-                    <td>
-                        <?= (int)$item['quantity'] ?>
-                    </td>
-
-                    <td>
-                        <?= money($item['unit_price']) ?>
-                    </td>
-
-                    <td>
-                        <?= money($item['subtotal']) ?>
+                    <td colspan="4">
+                        No products found for this sale.
                     </td>
                 </tr>
 
-            <?php endforeach; ?>
+            <?php endif; ?>
 
-        <?php else: ?>
-
-            <tr>
-                <td colspan="4">No products found for this sale.</td>
-            </tr>
-
-        <?php endif; ?>
+        </tbody>
 
     </table>
 
@@ -157,7 +197,9 @@ function money($amount) {
         Print Receipt
     </button>
 
-    <a href="reports.php">Back to Reports</a>
+    <a href="sales.php">
+        Back to Sales
+    </a>
 
 </div>
 

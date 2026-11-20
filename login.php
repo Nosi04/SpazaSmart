@@ -3,9 +3,15 @@
 session_start();
 require_once 'connection.php';
 
-// If already logged in, go to dashboard
+// If already logged in, redirect according to role
 if (isset($_SESSION['user_id'])) {
-    header("Location: dashboard.php");
+
+    if (($_SESSION['role'] ?? '') === 'owner') {
+        header("Location: dashboard.php");
+    } else {
+        header("Location: staff_dashboard.php");
+    }
+
     exit();
 }
 
@@ -23,7 +29,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     } else {
 
-        // Check if email exists
         $stmt = $conn->prepare(
             "SELECT user_id, full_name, email, password, role
              FROM users
@@ -41,19 +46,27 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $user = $result->fetch_assoc();
 
-                // Verify password
                 if (password_verify($password, $user['password'])) {
 
-                    // Create a new session ID
+                    // Create a secure new session ID
                     session_regenerate_id(true);
 
                     $_SESSION['user_id'] = $user['user_id'];
                     $_SESSION['full_name'] = $user['full_name'];
                     $_SESSION['role'] = $user['role'];
 
-                    // Redirect to dashboard
                     $stmt->close();
-                    header("Location: dashboard.php");
+
+                    // Redirect according to the user's role
+                    if ($user['role'] === 'owner') {
+
+                        header("Location: owner_dashboard.php");
+
+                    } else {
+
+                        header("Location: staff_dashboard.php");
+                    }
+
                     exit();
 
                 } else {
@@ -93,23 +106,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <div class="login-container">
 
         <div class="login-brand">
+
             <div class="login-brand-icon">S</div>
 
-            <div class="login-brand-name">
-                SPAZASMART
-            </div>
+            <div class="login-brand-name">SPAZASMART</div>
 
             <div class="login-brand-caption">
                 SHOP MANAGEMENT SYSTEM
             </div>
+
         </div>
 
-        <div class="login-heading">
-            Welcome Back
-        </div>
+        <h1 class="login-heading">Welcome Back</h1>
 
         <p class="login-description">
-            Sign in to manage your shop and keep your business running smoothly.
+            Sign in to manage your shop's products, sales and stock.
         </p>
 
         <?php if (!empty($message)): ?>
@@ -133,7 +144,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     placeholder="Enter your email address"
                     value="<?= htmlspecialchars($email) ?>"
                     required
-                    autocomplete="email"
                 >
 
             </div>
@@ -148,7 +158,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     name="password"
                     placeholder="Enter your password"
                     required
-                    autocomplete="current-password"
                 >
 
             </div>
@@ -159,13 +168,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         </form>
 
-        <div class="login-register-link">
+        <p class="login-register-link">
             Don't have an account?
-            <a href="register.php">Create an account</a>
-        </div>
+            <a href="register.php">Register here</a>
+        </p>
 
         <div class="login-footer">
-            SpazaSmart &copy; <?= date("Y") ?>
+            SpazaSmart © 2026. All rights reserved.
         </div>
 
     </div>

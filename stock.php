@@ -3,8 +3,17 @@
 session_start();
 require_once 'connection.php';
 
-// Check if user is logged in
+// =====================================
+// LOGIN AND ROLE PROTECTION
+// =====================================
+
 if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+// Only owners and staff can access stock management
+if (!in_array($_SESSION['role'] ?? '', ['owner', 'staff'], true)) {
     header("Location: login.php");
     exit();
 }
@@ -241,10 +250,12 @@ $history = $stmt->get_result();
 <body class="stock-page">
 
 <div class="stock-container">
+    <a href="<?= ($_SESSION['role'] ?? '') === 'owner'
+    ? 'dashboard.php'
+    : 'staff_dashboard.php' ?>" class="stock-back">
+    &larr; Back to Dashboard
+</a>
 
-    <a href="dashboard.php" class="stock-back">
-        &larr; Back to Dashboard
-    </a>
 
     <!-- PAGE HEADER -->
      <div>

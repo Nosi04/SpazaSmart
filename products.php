@@ -3,6 +3,23 @@
 session_start();
 require_once 'connection.php';
 
+// Check login
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+// Identify user role
+$userRole = strtolower(trim($_SESSION['role'] ?? ''));
+$isOwner = ($userRole === 'owner');
+$isStaff = ($userRole === 'staff');
+
+// Only owner and staff can access this page
+if (!$isOwner && !$isStaff) {
+    header("Location: login.php");
+    exit();
+}
+
 $message = "";
 $messageType = "success";
 
@@ -11,8 +28,27 @@ function clean($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-// ADD PRODUCT
-if (isset($_POST['add_product'])) {
+// ========================================
+// PREVENT STAFF FROM MODIFYING PRODUCTS
+// ========================================
+
+if (
+    !$isOwner &&
+    (
+        isset($_POST['add_product']) ||
+        isset($_POST['update_product']) ||
+        isset($_POST['delete_product'])
+    )
+) {
+    $message = "Access denied. Only the owner can add, edit or delete products.";
+    $messageType = "error";
+}
+
+// ========================================
+// ADD PRODUCT - OWNER ONLY
+// ========================================
+
+if ($isOwner && isset($_POST['add_product'])) {
 
     $category_id = (int)($_POST['category_id'] ?? 0);
     $supplier_id = (int)($_POST['supplier_id'] ?? 0);
@@ -39,6 +75,7 @@ if (isset($_POST['add_product'])) {
         $check = $conn->prepare(
             "SELECT category_id FROM categories WHERE category_id = ?"
         );
+
         $check->bind_param("i", $category_id);
         $check->execute();
         $categoryExists = $check->get_result()->num_rows > 0;
@@ -48,14 +85,17 @@ if (isset($_POST['add_product'])) {
         $check = $conn->prepare(
             "SELECT supplier_id FROM suppliers WHERE supplier_id = ?"
         );
+
         $check->bind_param("i", $supplier_id);
         $check->execute();
         $supplierExists = $check->get_result()->num_rows > 0;
         $check->close();
 
         if (!$categoryExists || !$supplierExists) {
+
             $message = "Please select a valid category and supplier.";
             $messageType = "error";
+
         } else {
 
             $stmt = $conn->prepare("
@@ -89,8 +129,11 @@ if (isset($_POST['add_product'])) {
     }
 }
 
-// UPDATE PRODUCT
-if (isset($_POST['update_product'])) {
+// ========================================
+// UPDATE PRODUCT - OWNER ONLY
+// ========================================
+
+if ($isOwner && isset($_POST['update_product'])) {
 
     $product_id = (int)($_POST['product_id'] ?? 0);
     $category_id = (int)($_POST['category_id'] ?? 0);
@@ -151,8 +194,11 @@ if (isset($_POST['update_product'])) {
     }
 }
 
-// DELETE PRODUCT
-if (isset($_POST['delete_product'])) {
+// ========================================
+// DELETE PRODUCT - OWNER ONLY
+// ========================================
+
+if ($isOwner && isset($_POST['delete_product'])) {
 
     $product_id = (int)($_POST['product_id'] ?? 0);
 
@@ -180,7 +226,10 @@ if (isset($_POST['delete_product'])) {
     $stmt->close();
 }
 
+// ========================================
 // SUCCESS MESSAGES
+// ========================================
+
 if (isset($_GET['success'])) {
 
     $successMessages = [
@@ -195,24 +244,29 @@ if (isset($_GET['success'])) {
     }
 }
 
-// LOAD CATEGORIES
+// ========================================
+// LOAD CATEGORIES AND SUPPLIERS
+// ========================================
+
 $categories = $conn->query("
     SELECT category_id, category_name
     FROM categories
     ORDER BY category_name ASC
 ");
 
-// LOAD SUPPLIERS
 $suppliers = $conn->query("
     SELECT supplier_id, supplier_name
     FROM suppliers
     ORDER BY supplier_name ASC
 ");
 
-// GET PRODUCT FOR EDITING
+// ========================================
+// GET PRODUCT FOR EDITING - OWNER ONLY
+// ========================================
+
 $editProduct = null;
 
-if (isset($_GET['edit'])) {
+if ($isOwner && isset($_GET['edit'])) {
 
     $edit_id = (int)$_GET['edit'];
 
@@ -233,7 +287,10 @@ if (isset($_GET['edit'])) {
     $stmt->close();
 }
 
+// ========================================
 // SEARCH PRODUCTS
+// ========================================
+
 $search = trim($_GET['search'] ?? '');
 $searchTerm = "%" . $search . "%";
 
@@ -261,7 +318,10 @@ $stmt->execute();
 
 $products = $stmt->get_result();
 
+// ========================================
 // STOCK STATISTICS
+// ========================================
+
 $stats = $conn->query("
     SELECT
         COUNT(*) AS total,
@@ -278,6 +338,11 @@ $statistics = $stats->fetch_assoc();
 
 $totalProducts = $statistics['total'];
 $lowStock = $statistics['low_stock'];
+
+// Dashboard destination based on role
+$dashboardLink = $isOwner
+    ? "dashboard.php"
+    : "staff_dashboard.php";
 
 ?>
 
@@ -298,10 +363,14 @@ $lowStock = $statistics['low_stock'];
     <div class="page-header">
         <div>
             <h1>Product Management</h1>
-            <p class="subtitle">Manage your SpazaSmart inventory.</p>
+            <p class="subtitle">
+                <?= $isOwner
+                    ? "Manage your SpazaSmart inventory."
+                    : "View product information and available stock." ?>
+            </p>
         </div>
 
-        <a href="dashboard.php" class="back-button">
+        <a href="<?= clean($dashboardLink) ?>" class="back-button">
             Back to Dashboard
         </a>
     </div>
@@ -313,6 +382,7 @@ $lowStock = $statistics['low_stock'];
     <?php endif; ?>
 
     <!-- STATISTICS -->
+
     <div class="statistics">
 
         <div class="stat-card">
@@ -327,142 +397,158 @@ $lowStock = $statistics['low_stock'];
 
     </div>
 
-    <!-- ADD / EDIT PRODUCT FORM -->
-    <div class="form-box">
+    <!-- ADD / EDIT PRODUCT FORM - OWNER ONLY -->
 
-        <h2>
-            <?= $editProduct ? "Edit Product" : "Add New Product" ?>
-        </h2>
+    <?php if ($isOwner): ?>
 
-        <form method="POST" action="products.php">
+        <div class="form-box">
 
-            <?php if ($editProduct): ?>
-                <input
-                    type="hidden"
-                    name="product_id"
-                    value="<?= (int)$editProduct['product_id'] ?>"
+            <h2>
+                <?= $editProduct ? "Edit Product" : "Add New Product" ?>
+            </h2>
+
+            <form method="POST" action="products.php">
+
+                <?php if ($editProduct): ?>
+                    <input
+                        type="hidden"
+                        name="product_id"
+                        value="<?= (int)$editProduct['product_id'] ?>"
+                    >
+                <?php endif; ?>
+
+                <div class="form-grid">
+
+                    <div class="form-group">
+                        <label>Product Name</label>
+                        <input
+                            type="text"
+                            name="product_name"
+                            value="<?= clean($editProduct['product_name'] ?? '') ?>"
+                            placeholder="Enter product name"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label>Category</label>
+
+                        <select name="category_id" required>
+                            <option value="">Select Category</option>
+
+                            <?php while ($category = $categories->fetch_assoc()): ?>
+                                <option
+                                    value="<?= (int)$category['category_id'] ?>"
+                                    <?= (
+                                        isset($editProduct['category_id']) &&
+                                        $editProduct['category_id'] == $category['category_id']
+                                    ) ? 'selected' : '' ?>
+                                >
+                                    <?= clean($category['category_name']) ?>
+                                </option>
+                            <?php endwhile; ?>
+
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Supplier</label>
+
+                        <select name="supplier_id" required>
+                            <option value="">Select Supplier</option>
+
+                            <?php while ($supplier = $suppliers->fetch_assoc()): ?>
+                                <option
+                                    value="<?= (int)$supplier['supplier_id'] ?>"
+                                    <?= (
+                                        isset($editProduct['supplier_id']) &&
+                                        $editProduct['supplier_id'] == $supplier['supplier_id']
+                                    ) ? 'selected' : '' ?>
+                                >
+                                    <?= clean($supplier['supplier_name']) ?>
+                                </option>
+                            <?php endwhile; ?>
+
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Buying Price (R)</label>
+                        <input
+                            type="number"
+                            name="buying_price"
+                            min="0"
+                            step="0.01"
+                            value="<?= clean($editProduct['buying_price'] ?? '') ?>"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label>Selling Price (R)</label>
+                        <input
+                            type="number"
+                            name="selling_price"
+                            min="0"
+                            step="0.01"
+                            value="<?= clean($editProduct['selling_price'] ?? '') ?>"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label>Quantity</label>
+                        <input
+                            type="number"
+                            name="quantity"
+                            min="0"
+                            value="<?= clean($editProduct['quantity'] ?? '') ?>"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label>Minimum Stock</label>
+                        <input
+                            type="number"
+                            name="minimum_stock"
+                            min="0"
+                            value="<?= clean($editProduct['minimum_stock'] ?? '') ?>"
+                            required
+                        >
+                    </div>
+
+                </div>
+
+                <button
+                    type="submit"
+                    name="<?= $editProduct ? 'update_product' : 'add_product' ?>"
                 >
-            <?php endif; ?>
+                    <?= $editProduct ? 'Update Product' : 'Add Product' ?>
+                </button>
 
-            <div class="form-grid">
+                <?php if ($editProduct): ?>
+                    <a href="products.php">Cancel Editing</a>
+                <?php endif; ?>
 
-                <div class="form-group">
-                    <label>Product Name</label>
-                    <input
-                        type="text"
-                        name="product_name"
-                        value="<?= clean($editProduct['product_name'] ?? '') ?>"
-                        placeholder="Enter product name"
-                        required
-                    >
-                </div>
+            </form>
 
-                <div class="form-group">
-                    <label>Category</label>
+        </div>
 
-                    <select name="category_id" required>
-                        <option value="">Select Category</option>
+    <?php else: ?>
 
-                        <?php while ($category = $categories->fetch_assoc()): ?>
-                            <option
-                                value="<?= (int)$category['category_id'] ?>"
-                                <?= (
-                                    isset($editProduct['category_id']) &&
-                                    $editProduct['category_id'] == $category['category_id']
-                                ) ? 'selected' : '' ?>
-                            >
-                                <?= clean($category['category_name']) ?>
-                            </option>
-                        <?php endwhile; ?>
+        <div class="form-box">
+            <h2>Product Viewing Access</h2>
+            <p>
+                You can search and view products, but only the owner
+                can add, edit or delete products.
+            </p>
+        </div>
 
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Supplier</label>
-
-                    <select name="supplier_id" required>
-                        <option value="">Select Supplier</option>
-
-                        <?php while ($supplier = $suppliers->fetch_assoc()): ?>
-                            <option
-                                value="<?= (int)$supplier['supplier_id'] ?>"
-                                <?= (
-                                    isset($editProduct['supplier_id']) &&
-                                    $editProduct['supplier_id'] == $supplier['supplier_id']
-                                ) ? 'selected' : '' ?>
-                            >
-                                <?= clean($supplier['supplier_name']) ?>
-                            </option>
-                        <?php endwhile; ?>
-
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Buying Price (R)</label>
-                    <input
-                        type="number"
-                        name="buying_price"
-                        min="0"
-                        step="0.01"
-                        value="<?= clean($editProduct['buying_price'] ?? '') ?>"
-                        required
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label>Selling Price (R)</label>
-                    <input
-                        type="number"
-                        name="selling_price"
-                        min="0"
-                        step="0.01"
-                        value="<?= clean($editProduct['selling_price'] ?? '') ?>"
-                        required
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label>Quantity</label>
-                    <input
-                        type="number"
-                        name="quantity"
-                        min="0"
-                        value="<?= clean($editProduct['quantity'] ?? '') ?>"
-                        required
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label>Minimum Stock</label>
-                    <input
-                        type="number"
-                        name="minimum_stock"
-                        min="0"
-                        value="<?= clean($editProduct['minimum_stock'] ?? '') ?>"
-                        required
-                    >
-                </div>
-
-            </div>
-
-            <button
-                type="submit"
-                name="<?= $editProduct ? 'update_product' : 'add_product' ?>"
-            >
-                <?= $editProduct ? 'Update Product' : 'Add Product' ?>
-            </button>
-
-            <?php if ($editProduct): ?>
-                <a href="products.php">Cancel Editing</a>
-            <?php endif; ?>
-
-        </form>
-
-    </div>
+    <?php endif; ?>
 
     <!-- SEARCH PRODUCTS -->
+
     <div class="table-box">
 
         <h2>Product List</h2>
@@ -495,7 +581,10 @@ $lowStock = $statistics['low_stock'];
                     <th>Quantity</th>
                     <th>Minimum Stock</th>
                     <th>Status</th>
-                    <th>Actions</th>
+
+                    <?php if ($isOwner): ?>
+                        <th>Actions</th>
+                    <?php endif; ?>
                 </tr>
             </thead>
 
@@ -511,13 +600,21 @@ $lowStock = $statistics['low_stock'];
 
                             <td><?= clean($product['product_name']) ?></td>
 
-                            <td><?= clean($product['category_name'] ?? 'Not assigned') ?></td>
+                            <td>
+                                <?= clean($product['category_name'] ?? 'Not assigned') ?>
+                            </td>
 
-                            <td><?= clean($product['supplier_name'] ?? 'Not assigned') ?></td>
+                            <td>
+                                <?= clean($product['supplier_name'] ?? 'Not assigned') ?>
+                            </td>
 
-                            <td>R<?= number_format((float)$product['buying_price'], 2) ?></td>
+                            <td>
+                                R<?= number_format((float)$product['buying_price'], 2) ?>
+                            </td>
 
-                            <td>R<?= number_format((float)$product['selling_price'], 2) ?></td>
+                            <td>
+                                R<?= number_format((float)$product['selling_price'], 2) ?>
+                            </td>
 
                             <td><?= (int)$product['quantity'] ?></td>
 
@@ -531,23 +628,33 @@ $lowStock = $statistics['low_stock'];
                                 <?php endif; ?>
                             </td>
 
-                            <td>
-                                <a href="products.php?edit=<?= (int)$product['product_id'] ?>">
-                                    Edit
-                                </a>
+                            <?php if ($isOwner): ?>
 
-                                <form method="POST" action="products.php">
-                                    <input
-                                        type="hidden"
-                                        name="product_id"
-                                        value="<?= (int)$product['product_id'] ?>"
-                                    >
+                                <td>
 
-                                    <button type="submit" name="delete_product">
-                                        Delete
-                                    </button>
-                                </form>
-                            </td>
+                                    <a href="products.php?edit=<?= (int)$product['product_id'] ?>">
+                                        Edit
+                                    </a>
+
+                                    <form method="POST" action="products.php">
+                                        <input
+                                            type="hidden"
+                                            name="product_id"
+                                            value="<?= (int)$product['product_id'] ?>"
+                                        >
+
+                                        <button
+                                            type="submit"
+                                            name="delete_product"
+                                            onclick="return confirm('Are you sure you want to delete this product?');"
+                                        >
+                                            Delete
+                                        </button>
+                                    </form>
+
+                                </td>
+
+                            <?php endif; ?>
 
                         </tr>
 
@@ -556,7 +663,9 @@ $lowStock = $statistics['low_stock'];
                 <?php else: ?>
 
                     <tr>
-                        <td colspan="10">No products found.</td>
+                        <td colspan="<?= $isOwner ? 10 : 9 ?>">
+                            No products found.
+                        </td>
                     </tr>
 
                 <?php endif; ?>
@@ -571,4 +680,3 @@ $lowStock = $statistics['low_stock'];
 
 </body>
 </html>
-

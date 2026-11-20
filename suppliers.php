@@ -3,9 +3,18 @@
 session_start();
 require_once 'connection.php';
 
-// Protect page
+// =====================================
+// LOGIN AND ROLE PROTECTION
+// =====================================
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
+    exit();
+}
+
+// Only owners can manage suppliers
+if (($_SESSION['role'] ?? '') !== 'owner') {
+    header("Location: staff_dashboard.php");
     exit();
 }
 
@@ -513,5 +522,3 @@ $totalSuppliers = $suppliers->num_rows;
 
 </body>
 </html>
-
-

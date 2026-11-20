@@ -3,9 +3,15 @@
 session_start();
 require_once 'connection.php';
 
-// Protect dashboard
+// Protect owner dashboard
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
+    exit();
+}
+
+// Only owners can access this dashboard
+if (($_SESSION['role'] ?? '') !== 'owner') {
+    header("Location: staff_dashboard.php");
     exit();
 }
 

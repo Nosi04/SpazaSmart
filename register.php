@@ -3,9 +3,12 @@
 session_start();
 require_once 'connection.php';
 
-// Redirect users who are already logged in
-if (isset($_SESSION['user_id'])) {
-    header("Location: dashboard.php");
+// Redirect logged-in staff to their dashboard.
+// Allow logged-in owners to access registration
+// so they can create additional accounts.
+if (isset($_SESSION['user_id']) &&
+    ($_SESSION['role'] ?? '') !== 'owner') {
+    header("Location: staff_dashboard.php");
     exit();
 }
 
@@ -14,6 +17,7 @@ $message_type = "";
 
 $full_name = "";
 $email = "";
+$role = "staff";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
@@ -21,6 +25,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
+    $role = $_POST['role'] ?? 'staff';
 
     // Validate full name
     if ($full_name === '') {
@@ -34,6 +39,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     // Validate email
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $message = "Please enter a valid email address.";
+        $message_type = "error";
+
+    // Validate selected role
+    } elseif (!in_array($role, ['owner', 'staff'], true)) {
+        $message = "Please select a valid account role.";
+        $message_type = "error";
+
+    // Only existing owners can create owner accounts
+    } elseif (
+        $role === 'owner' &&
+        ($_SESSION['role'] ?? '') !== 'owner'
+    ) {
+        $message = "Only an existing owner can create another owner account.";
         $message_type = "error";
 
     // Validate password
@@ -78,10 +96,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     PASSWORD_DEFAULT
                 );
 
-                // New accounts receive the staff role
-                $role = "staff";
-
-                // Insert new user
+                // Insert new user with selected role
                 $stmt = $conn->prepare("
                     INSERT INTO users
                     (full_name, email, password, role)
@@ -109,6 +124,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                         $full_name = "";
                         $email = "";
+                        $role = "staff";
 
                     } else {
 
@@ -134,9 +150,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Create Account | SpazaSmart</title>
+
     <link rel="stylesheet" href="/SpazaSmart/style.css?v=13">
-
-
 </head>
 
 <body class="register-page">
@@ -195,6 +210,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     autocomplete="email"
                     required
                 >
+            </div>
+
+            <!-- ROLE SELECTION -->
+            <div class="register-field">
+                <label for="role">Account Role</label>
+
+                <select
+                    id="role"
+                    name="role"
+                    required
+                >
+                    <option value="staff"
+                        <?= $role === 'staff' ? 'selected' : '' ?>>
+                        Staff
+                    </option>
+
+                    <option value="owner"
+                        <?= $role === 'owner' ? 'selected' : '' ?>>
+                        Owner
+                    </option>
+                </select>
+
+                <small>
+                    Owner accounts can only be created by an existing owner.
+                </small>
             </div>
 
             <div class="register-field">

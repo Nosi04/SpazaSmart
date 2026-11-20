@@ -3,9 +3,18 @@
 session_start();
 require_once 'connection.php';
 
-// Protect page
+// =====================================
+// LOGIN AND OWNER ACCESS PROTECTION
+// =====================================
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
+    exit();
+}
+
+// Profit reports are restricted to the owner
+if (($_SESSION['role'] ?? '') !== 'owner') {
+    header("Location: staff_dashboard.php");
     exit();
 }
 
